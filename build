@@ -7,6 +7,17 @@
 #
 # (c) 1997-2008 SuSE GmbH Nuernberg, Germany
 
+# 用法示例：
+# env BUILD_RPMS=/dist/mithras/mithras/build/BUILD/x86_64/GTES/ build --clean --dist gtes11.3
+# BUILD_RPMS 指定一个仓库（包含足够的软件包）路径
+# --clean 清理先前的 BUILD_ROOT
+# --dist gtes11.3  使用 gtes11.3.conf 文件初始化 BUILD_ROOT
+
+# 下面设置一些变量和定义一些函数，脚本“真正”开始从 "#### main ####" 处。
+
+# 设置 BUILD_DIR 和 BUILD_ROOT
+# BUILD_DIR 是 build 程序安装到哪里了，这下面有 configs 目录
+# BUILD_ROOT  是将要建立 chroot 环境的目录
 test -z "$BUILD_DIR" && BUILD_DIR=/usr/lib/build
 test -z "$BUILD_ROOT" && BUILD_ROOT=/var/tmp/build-root
 
@@ -528,16 +539,29 @@ linux64()
 }
 
 #### main ####
+# 除了脚本开始的一些变量设置，真正的开始从这里
 
+# trap 命令捕捉 EXIT 信号，执行 fail_exit 代码
+# trap 用法可参考 : 
+# http://jianlee.ylinux.org/Computer/Shell/shell_builtin.html#sec1
 trap fail_exit EXIT
 
+# archname 类似如：
+# archname='x86_64-linux-thread-multi';
 case `perl -V:archname` in
     *x86_64*) PERSONALITY_SYSCALL=135 ;;
     *i?86*)   PERSONALITY_SYSCALL=136 ;;
 esac
 
+# shopt 设置 nullglob 属性，这样如果没有匹配到的文件名会用空串代替
+# 请参考：http://127.0.0.1/Computer/Shell/shell_builtin.html#sec7
+# | # echo libb*
+# | libb*
+# | # shopt -s nullglob
+# | # echo libb*
 shopt -s nullglob
 
+# detect_vm_2nd_stage 是前面定义的一个函数
 if detect_vm_2nd_stage ; then
     set "/.build-srcdir/$SPECFILE"
 fi
