@@ -554,7 +554,7 @@ case `perl -V:archname` in
 esac
 
 # shopt 设置 nullglob 属性，这样如果没有匹配到的文件名会用空串代替
-# 请参考：http://127.0.0.1/Computer/Shell/shell_builtin.html#sec7
+# 请参考：http://jianlee.ylinux.org/Computer/Shell/shell_builtin.html#sec7
 # | # echo libb*
 # | libb*
 # | # shopt -s nullglob
