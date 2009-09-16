@@ -1,0 +1,22 @@
+郑重声明：
+
+  这个项目基于 openSUSE buildservice 项目中的一个模块
+
+https://forgesvn1.novell.com/svn/opensuse/trunk/buildservice/src/build/
+
+在没有重写之前，所有版权属于此项目。YBuild 名称属于 http://ylinux.org。
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+本项目目标：
+
+1. 理解注释这个模块的所有文件（中文）。
+
+2. 基于此openSUSE的build，重写一个通用的编译工具。
+   
+
+这个工具的应当有这样一些功能：
+
+1. 能利用仓库（rpm、deb等）自动创建一个最小化纯的编译环境。
+2. 能在创建好的纯的环境中编译各种 GNU/Linux 包（rpm、deb、src等）
+3. 主要作为其他应用调用的后端。

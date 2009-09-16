@@ -1,0 +1,65 @@
+K 25
+svn:wc:ra_dav:version-url
+V 61
+/svn/opensuse/!svn/ver/7180/trunk/buildservice/src/build/test
+END
+testbuild.sles10-x86_64
+K 25
+svn:wc:ra_dav:version-url
+V 85
+/svn/opensuse/!svn/ver/7180/trunk/buildservice/src/build/test/testbuild.sles10-x86_64
+END
+dummy.spec
+K 25
+svn:wc:ra_dav:version-url
+V 72
+/svn/opensuse/!svn/ver/7180/trunk/buildservice/src/build/test/dummy.spec
+END
+testbuild.11.0-i386
+K 25
+svn:wc:ra_dav:version-url
+V 81
+/svn/opensuse/!svn/ver/7180/trunk/buildservice/src/build/test/testbuild.11.0-i386
+END
+testbuild.sles9-i386
+K 25
+svn:wc:ra_dav:version-url
+V 82
+/svn/opensuse/!svn/ver/7180/trunk/buildservice/src/build/test/testbuild.sles9-i386
+END
+config
+K 25
+svn:wc:ra_dav:version-url
+V 68
+/svn/opensuse/!svn/ver/7180/trunk/buildservice/src/build/test/config
+END
+testbuild.11.1-i386
+K 25
+svn:wc:ra_dav:version-url
+V 81
+/svn/opensuse/!svn/ver/7180/trunk/buildservice/src/build/test/testbuild.11.1-i386
+END
+common
+K 25
+svn:wc:ra_dav:version-url
+V 68
+/svn/opensuse/!svn/ver/7180/trunk/buildservice/src/build/test/common
+END
+testbuild.11.0-x86_64
+K 25
+svn:wc:ra_dav:version-url
+V 83
+/svn/opensuse/!svn/ver/7180/trunk/buildservice/src/build/test/testbuild.11.0-x86_64
+END
+testbuild.8.1-i386
+K 25
+svn:wc:ra_dav:version-url
+V 80
+/svn/opensuse/!svn/ver/7180/trunk/buildservice/src/build/test/testbuild.8.1-i386
+END
+testbuild.sles10-i386
+K 25
+svn:wc:ra_dav:version-url
+V 83
+/svn/opensuse/!svn/ver/7180/trunk/buildservice/src/build/test/testbuild.sles10-i386
+END
