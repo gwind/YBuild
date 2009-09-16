@@ -422,11 +422,20 @@ function create_baselibs {
     fi
 }
 
+# detect_vm_2nd_stage 函数的作用是探测是否需要进一步设置新的环境。如果
+# 执行程序的路径名为 "/.build/build" ，说明已经在一个新的“环境”中，这时
+# 候需要重新设置一些环境变量
+
 detect_vm_2nd_stage()
 {
+    # $0 就是程序名，注意 test 前的 ! 号。如果 $0 是 "/.build/build" ，
+    # 说明当前已在一个虚拟环境中（通常是chroot），此时跳过 "return 1"，
+    # 接着执行下面过程，重新准备一些环境
     if ! test "$0" = "/.build/build" ; then
 	return 1
     fi
+    # 如果 $0 是 "/.build/build"，从下面开始准备这个环境。
+    # 这里主要重新准备一些变量
     echo "2nd stage started in virtual machine"
     BUILD_ROOT=/
     BUILD_DIR=/.build
@@ -562,6 +571,7 @@ esac
 shopt -s nullglob
 
 # detect_vm_2nd_stage 是前面定义的一个函数
+# 测试是否需要进一步设置环境
 if detect_vm_2nd_stage ; then
     set "/.build-srcdir/$SPECFILE"
 fi
