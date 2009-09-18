@@ -1,24 +1,44 @@
 #!/bin/bash
 
+# set_build_arch 函数设置 $BUILD_ARCH
 set_build_arch()
 {
+    # : 字符相当于一个空操作，但是这个操作的返回值是True。
+    # 下面的 ${} 需要要两个操作数，用 : 的目的是填补空缺
     : ${BUILD_HOST_ARCH:=`uname -m`}
 
+    # build 脚本的选项 --arch 决定 $BUILD_ARCH 的初始值
+    # 如果命令行没有指定 arch，$BUILD_ARCH 值为空，就执行if内的命令
     if [ -z "$BUILD_ARCH" ]; then
 	BUILD_ARCH="$BUILD_HOST_ARCH"
+        # 现在 $BUILD_ARCH 值是 从 $(uname -m) 的到的，如果值不是i686，
+        # 就用最兼容的架构：i586（基本就是i386)。btw 下面的"why ?" 是其
+        # 他人注释的，我认为没有什么需要 why 的，其实我们现在用 i386 和
+        # i686 编译都没有多少差别。
 	test i686 != "$BUILD_ARCH" || BUILD_ARCH=i586 # XXX: why?
     fi
 
+    # 下面进一步细化定义 arch 包含的具体内容（即兼容内容）
     case $BUILD_ARCH in
       i686) BUILD_ARCH="i686:i586:i486:i386" ;;
       i586) BUILD_ARCH="i586:i486:i386" ;;
       i486) BUILD_ARCH="i486:i386" ;;
       x86_64) BUILD_ARCH="x86_64:i686:i586:i486:i386" ;;
     esac
+    # 请看
+    # http://jianlee.ylinux.org/Computer/Shell/parameter_substitution.html
+    # 的 "${var#Pattern}, ${var##Pattern}"
+    # "${BUILD_ARCH#i686}" 将 $BUILD_ARCH 变量值的开头 i686 字符串删除
+    # 假设此时 $BUILD_ARCH 是 "i686:i586:i486:i386" , 那么
+    # ${BUILD_ARCH#i686} 的值是 ":i586:i486:i386", 下面的 if 就会执行。
+    # $BUILD_ARCH 为其他值就不会执行
     if test "$BUILD_ARCH" != "${BUILD_ARCH#i686}" ; then
 	cpuflags=`grep ^flags /proc/cpuinfo`
-	cpuflags="$cpuflags "
+	cpuflags="$cpuflags " # 注意！这里结尾多了一个空格！
+        # cx8 -- 8位指令比较与交换技术
+        # ${var/Pattern/Replacement} ， 用 Replacement 替换 Pattern (空亦同)
 	test "$cpuflags" = "${cpuflags/ cx8 /}" -o "$cpuflags" = "${cpuflags/ cmov /}" && {
+            # intel , amd 的 cpu 基本支持 cx8 或 cmov 指令集
 	    echo "Your cpu doesn't support i686 rpms. Exit."
 	    exit 1
 	}

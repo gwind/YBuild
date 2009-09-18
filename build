@@ -594,14 +594,20 @@ shopt -s nullglob
 
 # detect_vm_2nd_stage 是前面定义的一个函数
 # 测试是否需要进一步设置环境
+# set 命令直接接的字符串会设置为命令行各个参数( $1 $2 $3 ...)
 if detect_vm_2nd_stage ; then
     set "/.build-srcdir/$SPECFILE"
+    # 现在 echo $1 值为 "/.build-srcdir/$SPECFILE"
 fi
 
+# 目前 common_functions 定义了函数 set_build_arch ，这个函数设置了
+# $BUILD_ARCH
 . $BUILD_DIR/common_functions || exit 1
 
 export HOST
 
+# 下面的 $1 很可能是上面的 "/.build-srcdir/$SPECFILE"(假如
+# detect_vm_2nd_stage 返回值非0)
 while test -n "$1"; do
   PARAM="$1"
   ARG="$2"
