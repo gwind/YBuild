@@ -501,31 +501,39 @@ detect_vm_2nd_stage()
     return 0
 }
 
+# find_spec_files 函数准备好 spec 文件，可以有多个
 find_spec_files()
 {
+    # local 定义局部变量
     local spec files
+    # -z 判断字符串是否为0
     if [ -z "$SPECFILES" ]; then
 	set -- "`pwd`"
     else
 	set -- "${SPECFILES[@]}"
     fi
     SPECFILES=()
+    echo "#jianlee: $@"
     for spec in "$@"; do
+        # ${spec#/} 去掉开头的 '/'，这里的作用是判断 $spec 路径是否是绝对路径
 	if [ "$spec" = "${spec#/}" ]; then
 	    spec="`pwd`/$spec"
 	fi
 
 	if [ -d "$spec" ]; then
+            # specs 现在是包含 $spec/ 目录下所有 spec 文件，数组
 	    specs=("$spec"/*.spec)
 	    if [ -n "$specs" ]; then
 		SPECFILES=("${SPECFILES[@]}" "${specs[@]}")
 	    else
+                # 下面这一段上面意思？重复？
 		specs=("$spec"/*.spec)
 		if [ -n "$specs" ]; then
 		    SPECFILES=("${SPECFILES[@]}" "${specs[@]}")
 		fi
 	    fi
 	else
+            # 不是目录就是文件了
 	    SPECFILES[${#SPECFILES[@]}]="$spec";
 	fi
     done
@@ -608,22 +616,34 @@ export HOST
 
 # 下面的 $1 很可能是上面的 "/.build-srcdir/$SPECFILE"(假如
 # detect_vm_2nd_stage 返回值非0)
+# $1 不为空，执行 while
 while test -n "$1"; do
+  # 除非$1形如 "--XXX=xxx",否则 ARG 会不变
   PARAM="$1"
   ARG="$2"
-  shift
+  # "shift n" : 一次把参数向左移动n个，丢弃前n个参数，即 $(n+1) 变成
+  # $1。如果 n 为空，默认值是 1
+  shift # 此处的 shift 和 下面第二个 case 处理中的 shift 刚好去掉 2 个参数
+  # 下面的 case 把命令行参数中的 "--XXX=xxx" 变成 "----noarg=--XXX"，改
+  # 变 PARAM 和 ARG 变量的值；如果此时 $PARAM 不是形如 "--XXX=xxx" ，就
+  # 跳过下面case，PARAM 和 ARG 变量的值不变。
   case $PARAM in
-    *-*=*)
+    *-*=*)   # 注意，这里有个技巧 *- 可以匹配 -- ， 这样 --arch 和 -arch 都可以使用
+      # "#*=" 表示去掉从开头到第一次找到'='的字符串
       ARG=${PARAM#*=}
+      # 一个类似这样的参数 "--arch=i386"，此时ARG=i386，下面PARAM="--arch"
       PARAM=${PARAM%%=*}
+      # -- 在命令后面，表示不让shell解释后面的字符串为选项
+      # 如 "set -- --test1 test2 test3" ，如果不加 -- , shell 会报错
       set -- "----noarg=$PARAM" "$@"
   esac
+  # 此时 ARG 保存着 PARAM 选项的参数
   case $PARAM in
-      *-help|-h)
+      *-help|-h) # 输出帮助信息，退出
         echo_help
         cleanup_and_exit
       ;;
-      *-no*init)
+      *-no*init) # --noinit, --no-init, -no-init 等都可以匹配到
         DO_INIT=false
       ;;
       *-no*checks)
@@ -637,6 +657,7 @@ while test -n "$1"; do
       ;;
       *-rpms)
         BUILD_RPMS="$ARG"
+        # 如果给定 --rpms 选项，没有给参数，退出
 	if [ -z "$BUILD_RPMS" ] ; then
 	  echo_help
 	  cleanup_and_exit
@@ -644,6 +665,7 @@ while test -n "$1"; do
         shift
       ;;
       *-arch)
+        # 不用检查$ARG是否为空，因为有默认 BUILD_ARCH 测试
         BUILD_ARCH="$ARG"
         shift
       ;;
@@ -741,6 +763,8 @@ while test -n "$1"; do
           echo_help
           cleanup_and_exit
         fi
+        # ${#repos[@]} 值为当前数组元素个数
+        # 这里的作用是可以使用多个 --repository|--repo 选项指定多个 repos
         repos[${#repos[@]}]="$PARAM";
         repos[${#repos[@]}]="$ARG";
         shift
@@ -771,6 +795,9 @@ while test -n "$1"; do
         DISTURL=$ARG
 	shift
       ;;
+      # 此处的技巧是先把 "[-]-XXX=xxx" 拆开，经过一轮分析到这里，如果
+      # ----noarg 还在（如果处理就会shift掉），说明没有处理，则认为出错。
+      # 此处是不是应该放到倒数第三位？
       ----noarg)
         echo "$ARG does not take an argument"
         cleanup_and_exit
@@ -790,17 +817,21 @@ while test -n "$1"; do
         RSYNCDEST=$ARG
         shift
       ;;
+      # 这里对不能处理的选项
       -*)
         echo Unknown Option "$PARAM". Exit.
         cleanup_and_exit 1
       ;;
+      # 处理完选项，就是build命令的参数了。
       *)
         SPECFILES[${#SPECFILES[@]}]="$PARAM";
       ;;
     esac
 done
+# 现在选项和参数处理完毕！
 
 # XXX: doesn't kill vm if in prepare stage (because there is none)
+# 此处处理 KILL
 if test -n "$KILL" ; then
     test -z "$SRCDIR" || usage
     if test -z "$VM_IMAGE" ; then
@@ -829,19 +860,28 @@ if test -n "$KILL" ; then
     cleanup_and_exit 0
 fi
 
+# 使用 KVM 虚拟机，可先跳过(通常使用chroot)
 if [ "$VM_TYPE" = 'kvm' ]; then
+    # -r 指定的文件或目录存在并且可读时返回真
+    # -x 指定的文件或目录存在并且可执行时返回真
+    # -o 是将左右两个条件测试结果做或运算（一个为真即为真）
     if [ ! -r /dev/kvm -o ! -x "$qemu_bin"-kvm ]; then
 	echo ""
     fi
     qemu_bin="$kvm_bin"
     qemu_kernel="$kvm_kernel"
     qemu_initrd="$kvm_initrd"
+    # -e 指定的文件或目录存在时返回真
+    # -nt "f1 -nt f2" 表示  file f1 is newer than f2
     if [ ! -e $qemu_initrd-virtio -o $qemu_kernel -nt $qemu_initrd-virtio ]; then
 	if [ ! -w /root ]; then
 	    echo "No initrd that provides virtio support found. virtio accelleration disabled."
 	    echo "Run the following command as root to enable virtio:"
 	    shellquote "${mkinitrd_virtio_cmd[@]}"
 	    echo
+        # ">/dev/null" 把本应该输出到屏幕(stdout)的内容输出到
+        # /dev/null(有去无回的地方）；"2>&1" 把stderr(也是屏幕)的信息导
+        # 入到和stdout同一个地方（/dev/null）
 	elif /sbin/modinfo virtio_pci >/dev/null 2>&1; then
 	    echo "creating $qemu_initrd-virtio"
 	    "${mkinitrd_virtio_cmd[@]}" || cleanup_and_exit 1
@@ -866,6 +906,8 @@ if [ "$VM_TYPE" = 'qemu' ]; then
     qemu_rootdev=/dev/sda
 fi
 
+# 如果命令行使用 "--rpmlist" 指定一个 rpmlist 文件，就执行 if
+# -z 字符串为空串(长度为0)时返回真
 if [ -z "$RPMLIST" ]; then
     if [ -z "$repos" -a -z "$BUILD_RPMS" ]; then
 	BUILD_RPMS="/media/dvd/suse"
@@ -874,19 +916,26 @@ else
     repos=()
 fi
 
+# common_functions 文件中定义的函数，设置 BUILD_ARCH
 set_build_arch
 
 if [ -n "$CLEAN_BUILD" ]; then
     DO_INIT=true
 fi
 
+# find_spec_files 准备好 spec 文件，可以有多个，存在 SPECFILES 数组变量中
 find_spec_files
 
+# LIST_STATE 由  "*-list*state" 命令行参数控制为 true 或空
 if test -n "$LIST_STATE" ; then
+    # mktemp 函数创建动态命名的目录，并返回创建的目录
     BUILD_ROOT=`mktemp -d /var/tmp/build-list-state-XXXXXX`
     test -d "$BUILD_ROOT" || cleanup_and_exit 3
+    # SPECFILES 是数组变量，但是 $SPECFILES 显示第一个变量
     SPECFILE=$SPECFILES # only one specified anyways
+    # 测试 SPECFILES 是不是 *.src.rpm 包
     if test "$SPECFILE" != "${SPECFILE%.src.rpm}" ; then
+       # 到这里，说明 SPECFILE 是 *.src.rpm 包
        rm -rf $BUILD_ROOT/usr/src/packages
        mkdir -p $BUILD_ROOT/usr/src/packages/SOURCES $BUILD_ROOT/usr/src/packages/SPECS
        rpm -i --nodigest --nosignature --root $BUILD_ROOT $SPECFILE || {
@@ -894,6 +943,7 @@ if test -n "$LIST_STATE" ; then
 	   rm -rf $BUILD_ROOT
 	   cleanup_and_exit 3
        }
+       # for 循环没有执行具体命令，但是 SPECFILE 可能变了
        for SPECFILE in $BUILD_ROOT/usr/src/packages/SPECS/*.spec ; do : ; done
     fi
     init_buildsystem --list-state "${definesnstuff[@]}" "${repos[@]}" $USEUSEDFORBUILD $SPECFILE $BUILD_EXTRA_PACKS
