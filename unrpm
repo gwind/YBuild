@@ -1,6 +1,9 @@
 #! /bin/bash
 #
 
+# 这个脚本的作用是利用 rpm2cpio 解压 rpm 包
+
+
 function Usage () {
     echo "Usage: $(basename $0) [-vq] rpm-files...";
     echo "Unpack rpm files in current directory.";
@@ -35,6 +38,7 @@ test -z "$FILES" && Usage
 
 for f in $FILES; do
     if test "$QUIET" = "false" ; then
+        # echo -ne ":\t" 的作用是输出一个 ":" 和一个 tab
         echo -ne "$f:\t"
     fi
     rpm2cpio $f | cpio ${CPIO_OPTS}

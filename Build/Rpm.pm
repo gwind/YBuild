@@ -111,6 +111,7 @@ sub expr {
   }
 }
 
+# parse 接受 3 个引用标量
 sub parse {
   my ($config, $specfile, $xspec) = @_;
 
@@ -177,6 +178,7 @@ sub parse {
       $nfbline = \$xspec->[-1] if $inspec && $xspec;
       next;
     }
+    # 去掉注释，除这个情况外："#!BuildIgnore"
     if ($line =~ /^\s*#/) {
       next unless $line =~ /^#!BuildIgnore/;
     }
@@ -184,6 +186,8 @@ sub parse {
     if (!$skip) {
       my $tries = 0;
       while ($line =~ /^(.*?)%(\{([^\}]+)\}|[\?\!]*[0-9a-zA-Z_]+|%|\()(.*?)$/) {
+        # 现在 $1 $2 $3 $4 在处理'%{_mandir}/man3/uuid_parse.3*'行时：
+        # $1='' $2='{_mandir}' $3='_mandir' $4='/man3/uuid_parse.3*'
 	if ($tries++ > 1000) {
 	  print STDERR "Warning: spec file parser ",($lineno?" line $lineno":''),": macro too deeply nested\n" if $config->{'warnings'};
 	  $line = 'MACRO';
@@ -191,6 +195,7 @@ sub parse {
 	}
 	$expandedline .= $1;
 	$line = $4;
+        # 对于标签 %defattr ，$3 就等于 defattr
 	my $macname = defined($3) ? $3 : $2;
 	my $macorig = $2;
 	my $mactest = 0;
@@ -207,9 +212,10 @@ sub parse {
 	  $expandedline .= '%';
 	  next;
 	} elsif ($macname eq '(') {
+          # 目前还不能处理 "BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)"
 	  print STDERR "Warning: spec file parser",($lineno?" line $lineno":''),": can't expand %(...)\n" if $config->{'warnings'};
 	  $line = 'MACRO';
-	  last;
+	  last; # 退出 $line 处理的 while 循环
 	} elsif ($macname eq 'define' || $macname eq 'global') {
 	  if ($line =~ /^\s*([0-9a-zA-Z_]+)(\([^\)]*\))?\s*(.*?)$/) {
 	    my $macname = $1;
@@ -460,6 +466,7 @@ my %rpmstag = (
   "DIRNAMES"       => 1118,
 );
 
+# rpmq 通过给定 rpm 包和查询格式，返回查询结果到 %res
 sub rpmq {
   my ($rpm, @stags) = @_;
 
@@ -476,7 +483,9 @@ sub rpmq {
 
   my ($magic, $sigtype, $headmagic, $cnt, $cntdata, $lead, $head, $index, $data, $tag, $type, $offset, $count);
 
+  # 这里定义一个 RPM typeglob（翻译为类型团），这样下面出现的什么类型 RPM 变量都是 local 变量（my）
   local *RPM;
+  # 下面都是测试这个文件是否为标准 rpm 格式文件
   if (ref($rpm) eq 'ARRAY') {
     ($headmagic, $cnt, $cntdata) = unpack('N@8NN', $rpm->[0]);
     if ($headmagic != 0x8eade801) {
@@ -567,6 +576,7 @@ sub rpmq {
 
   return %res unless @stags;
 
+  # $cnt-- 自减运算
   while($cnt-- > 0) {
     ($tag, $type, $offset, $count, $index) = unpack('N4a*', $index);
     $tag = 0+$tag;

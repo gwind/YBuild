@@ -34,6 +34,7 @@ foreach my $dir (@ARGV) {
   my %known2fn;
   my %known2path;
   my %fnsize2id;
+  # find 用法参考文件结尾
   my $cmd = "find $dir -follow -type f \\( -name \"*.rpm\" -o -name \"*.deb\" \\) -a ! -name \"*src.rpm\" -printf '\%T@/\%s/\%i \%p\\n'";
   open(F, '-|', $cmd) or next;
   while (<F>) {
@@ -41,31 +42,40 @@ foreach my $dir (@ARGV) {
     next unless /^([\d\.]+\/\d+\/\d+) (.*)$/;
     my $id = $1;
     my $path = $2;
+    # 上面的 $1 和 $2 应该和 unless 句中正则匹配有关
     # new find added a fraction part to %T@, ignore it
     $id =~ s/^(\d+)\.\d+/$1/;
     next unless $path =~ /\.(?:rpm|deb)$/;
     my $fn = $path;
-    $fn =~ s/.*\///;
+    $fn =~ s/.*\///; # 剩下 filename 了
     next if $fn =~ /\.(?:patch|delta)\.rpm$/;
     my ($r, $arch);
     if ($fn =~ /^(.*)-[^-]+-[^-]+\.([^\. ]+)\.rpm$/) {
+      # 匹配 system-config-soundcard-2.0.6-1.noarch.rpm
       $r = $1;
       $arch = $2;
     } elsif ($path =~ /^(?:.*\/)?([^\/ ]+)\/([^\/ ]+)\.rpm$/) {
+      # m{^(?:.*/)?([^/ ]+)/([^/ ]+)\.rpm$}
+      # "?:" 在左括号后面表示这对括号只做分组用，不做模式保留用。即用 $1 $2 等不计这个括号个数。
+      # 这里应该针对 obs 格式： /srv/obs/build/home:jianlee/standard/i586/:full/lua.rpm
       #next if $1 eq '.';
       $r = $2;
       $arch = $1;
     } elsif ($fn =~ /^([^_]*)_(?:[^_]*)_([^_]*)\.deb$/) {
+      # 匹配 stardict-common_3.0.1-5_all.deb
       $r = $1;
       $arch = $2;
       $arch = 'noarch' if $arch eq 'all';
     } else {
+      # 其他格式就不支持了 :-)
       next;
     }
     next if $arch eq 'src' || $arch eq 'nosrc';
     push @known, "$r.$arch-$id";
     $known2fn{"$r.$arch-$id"} = $fn;
     $known2path{"$r.$arch-$id"} = $path;
+    # F:gnome-audio-extra.noarch-1258521503/260807/11340692: /dist/osc/lab/GTES/noarch/gnome-audio-extra-2.0.0-3.1.2.noarch.rpm
+    # 上面 260807 是 size
     my $size = (split('/', $id))[1];
     $fnsize2id{"$fn-$size"} = $id;
   }
@@ -84,12 +94,13 @@ foreach my $dir (@ARGV) {
     for my $known (@todo) {
       my $path = $known2path{$known};
       if ($path =~ /\.rpm$/) {
+        # rpm 包就用 Rpm 处理
         my %res = Build::Rpm::rpmq($path, 1000, 1001, 1002, 1006, 1022, 1047, 1049, 1048, 1050, 1112, 1113);
         next unless %res;
         Build::Rpm::add_flagsvers(\%res, 1047, 1112, 1113);
         Build::Rpm::add_flagsvers(\%res, 1049, 1048, 1050);
         my $id = $known;
-        $id =~ s/.*-//;
+        $id =~ s/.*-//; # 现在是真 "id" 了 :-)
         if ($known ne "$res{1000}->[0].$res{1022}->[0]-$id") {
 	  $known = "$res{1000}->[0].$res{1022}->[0]-$id";
 	  if (!$known2path{$known}) {
@@ -144,3 +155,15 @@ foreach my $dir (@ARGV) {
     print "I:$_: $tag{$_}\n" if exists $tag{$_};
   }
 }
+
+# find 使用示例 : /dist/osc/lab/GTES/ 为系统上一个目录
+# find /dist/osc/lab/GTES/ -follow -type f \( -name "*.rpm" -o -name "*.deb" \) -a ! -name "*src.rpm" -printf '%T@/%s/%i %p\n'
+# 结果类似如： 1258521503/260807/11340692 /dist/osc/lab/GTES/noarch/gnome-audio-extra-2.0.0-3.1.2.noarch.rpm
+ 
+# 本脚本执行完输出示例：
+#F:gnome-audio-extra.noarch-1258521503/260807/11340692: /dist/osc/lab/GTES/noarch/gnome-audio-extra-2.0.0-3.1.2.noarch.rpm
+#P:gnome-audio-extra.noarch-1258521503/260807/11340692: gnome-audio-extra = 2.0.0-3.1.2
+#R:gnome-audio-extra.noarch-1258521503/260807/11340692: rpmlib(CompressedFileNames) <= 3.0.4-1 rpmlib(PayloadFilesHavePrefix) <= 4.0-1
+#I:gnome-audio-extra.noarch-1258521503/260807/11340692: gnome-audio-extra-2.0.0-3.1.2 1174720078
+
+# F P R I 应该指 "File,Provides,Requires,..."

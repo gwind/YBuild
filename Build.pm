@@ -6,6 +6,7 @@ use Digest::MD5;
 use Build::Rpm;
 use Data::Dumper;
 
+# 设置一下 $expand_dbg 可以debug
 our $expand_dbg;
 
 our $do_rpm;
@@ -28,6 +29,8 @@ sub import {
 }
 
 
+# q 对 ' 翻译
+# qq 对 " 翻译
 my $std_macros = q{
 %define nil
 %define ix86 i386 i486 i586 i686 athlon
@@ -78,6 +81,8 @@ sub init_helper_hashes {
   $config->{'conflicth'} = \%conflicts;
 }
 
+# 调用 read_config 读取 dist 配置文件，调用实例：
+# Build::read_config_dist(gtes11.3, x86_64, /usr/lib/build/configs)
 sub read_config_dist {
   my ($dist, $archpath, $configdir) = @_;
 
@@ -94,33 +99,45 @@ sub read_config_dist {
     $dist = "$configdir/default.conf" unless -e $dist;
   }
   die("$dist: $!\n") unless -e $dist;
+  # 调用 read_config
   my $cf = read_config($arch, $dist);
   die("$dist: parse error\n") unless $cf;
   return $cf;
 }
 
+# 读取配置文件
 sub read_config {
   my ($arch, $cfile) = @_;
   my @macros = split("\n", $std_macros.$extra_macros);
   push @macros, "%define _target_cpu $arch";
   push @macros, "%define _target_os linux";
+  # $config 是一个hash引用
   my $config = {'macros' => \@macros, 'arch' => $arch};
+  # @config 是一个数组(list)
   my @config;
+
   if (ref($cfile)) {
+    # 处理 $cfile 为引用的情况
     @config = @$cfile;
   } elsif (defined($cfile)) {
+    # 一般值
     local *CONF;
     return undef unless open(CONF, '<', $cfile);
     @config = <CONF>;
     close CONF;
     chomp @config;
   }
+  #总之，现在 @config  里面是配置文件内容了
+
   # create verbatim macro blobs
   my @newconfig;
+  # 处理配置文件,处理 "macros:" 行都读到一行，其他格式本来就是一行一个，不动。
   while (@config) {
     push @newconfig, shift @config;
     next unless $newconfig[-1] =~ /^\s*macros:\s*$/si;
     $newconfig[-1] = "macros:\n";
+    # 如果匹配到 "macros:" 不论大小写，就把其后至
+    # 下一个 "macros:" 前的行读到 $newconfig[-1] 一行
     while (@config) {
       my $l = shift @config;
       last if $l =~ /^\s*:macros\s*$/si;
@@ -129,6 +146,7 @@ sub read_config {
   }
   my @spec;
   $config->{'save_expanded'} = 1;
+  # 用了一个技巧：dist 的配置文件语法和 Rpm 的语法一样
   Build::Rpm::parse($config, \@newconfig, \@spec);
   delete $config->{'save_expanded'};
   $config->{'preinstall'} = [];
@@ -303,16 +321,21 @@ sub get_build {
   my ($config, $subpacks, @deps) = @_;
   my @ndeps = grep {/^-/} @deps;
   my %keep = map {$_ => 1} (@deps, @{$config->{'keep'} || []}, @{$config->{'preinstall'}});
+  # 根据要编译软件包会生成的子包列表，生成要过滤软件包列表
   for (@{$subpacks || []}) {
     push @ndeps, "-$_" unless $keep{$_};
   }
   my %ndeps = map {$_ => 1} @ndeps;
+  # 过滤 n deps 包 ?
   @deps = grep {!$ndeps{$_}} @deps;
   push @deps, @{$config->{'preinstall'}};
   push @deps, @{$config->{'required'}};
   push @deps, @{$config->{'support'}};
+  # 过滤 n deps 包 ?
   @deps = grep {!$ndeps{"-$_"}} @deps;
+  # 对某些包做替换
   @deps = do_subst($config, @deps);
+  # 又来过滤 n deps 包 ?
   @deps = grep {!$ndeps{"-$_"}} @deps;
   @deps = expand($config, @deps, @ndeps);
   return @deps;
@@ -517,6 +540,7 @@ sub addproviders {
   return \@p;
 }
 
+# 解开关系
 sub expand {
   my ($config, @p) = @_;
 

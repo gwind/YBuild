@@ -10,6 +10,11 @@ use Build;
 
 my ($dist, $rpmdeps, $archs, $configdir, $useusedforbuild);
 
+# 这里的 while 处理命令行参数，只能是 "--选项 参数" 形式！
+# 一个实例 ($BUILD_DIR/init_buildsystem 中调用)：
+# $BUILD_DIR/expanddeps --dist gtes11.3 --depfile /var/tmp/build-root/.srcfiles.cache \
+#   --archpath x86_64:i686:i586:i486:i386 --configdir /usr/lib/build/configs \
+#   /var/tmp/build-root/.build-srcdir/e2fsprogs.spec
 while (@ARGV)  {
   if ($ARGV[0] eq '--dist') {
     shift @ARGV;
@@ -62,9 +67,11 @@ die("you must specfiy a depfile!\n") unless defined $rpmdeps;
 
 my @extradeps = grep {!/\.(?:spec|dsc|kiwi)$/} @ARGV;
 my @specs = grep {/\.(?:spec|dsc|kiwi)$/} @ARGV;
+# 一次处理一个 spec 任务
 die("can only work with at most one spec\n") if @specs > 1;
 my $spec = $specs[0];
 
+# 处理 archs ，并添加 noarch
 my @archs = split(':', $archs);
 push @archs, 'noarch' unless grep {$_ eq 'noarch'} @archs;
 
@@ -76,19 +83,32 @@ my %ids;
 
 my %packs_arch;
 open(F, '<', $rpmdeps) || die("$rpmdeps: $!\n");
+# $rpmdeps (/var/tmp/build-root/.srcfiles.cache) 文件格式类似如下：
+# F:freetype-devel.i386-1174650754/143087/9945172: /dist/mithras/mithras/build/BUILD/i386/GTES/freetype-devel-2.2.1-16.i386.rpm
+# P:freetype-devel.i386-1174650754/143087/9945172: freetype-devel = 2.2.1-16
+# R:freetype-devel.i386-1174650754/143087/9945172: /bin/sh freetype = 2.2.1-16 libfreetype.so.6 pkgconfig \
+#      rpmlib(CompressedFileNames) <= 3.0.4-1 rpmlib(PayloadFilesHavePrefix) <= 4.0-1 zlib-devel
+# I:freetype-devel.i386-1174650754/143087/9945172: freetype-devel-2.2.1-16 1174650751
 while(<F>) {
   chomp;
   if (/^F:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
-    next if $fn{$1};
+    # 现在 $1 为第一次匹配的如： freetype-devel.i386
+    # $2 为第二次匹配： /dist/mithras/mithras/build/BUILD/i386/GTES/freetype-devel-2.2.1-16.i386.rpm
+    # *? 是 * 的非贪婪匹配，好像这里没有必要吧？
+    next if $fn{$1};  # 如果 %fn 中有 $1 的值就略过
     $fn{$1} = $2;
     my $pack = $1;
     $pack =~ /^(.*)\.([^\.]+)$/ or die;
+    # 注意，现在 $1 和 $2 已经改变，为上面 $pack 的匹配
+    # $packs_arch{$2} 是一个数组引用，用 @{$packs_arch{$2}} 就可以使用这个数组
     push @{$packs_arch{$2}}, $1;
   } elsif (/^P:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
     next if $prov{$1};
+    # $1 提供 $2
     $prov{$1} = $2;
   } elsif (/^R:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
     next if $req{$1};
+    # $1 需要 $2
     $req{$1} = $2;
   } elsif (/^I:(.*?)-\d+\/\d+\/\d+: (.*)$/) {
     next if $ids{$1};
@@ -97,6 +117,11 @@ while(<F>) {
 }
 close F;
 
+# 下面for循环总结：
+# 一层for循环对数组 @archs 遍历，遍历变量 $arch；
+# 二层for循环对 @{$packs_arch{$arch} || []} 数组遍历，遍历变量为 $_ ，如果 $packs{$_} 为假，就把 "$_.$arch" 赋值给 $packs{$_}。 
+# 其中，$packs_arch{$arch}是一个数组引用。[] 可以创建一个匿名数组引用，
+# $packs_arch{$arch} || [] 可以在 $packs_arch{$arch} 为假时返回一个匿名空数组引用，@{...} 得到数组本身。
 for my $arch (@archs) {
   $packs{$_} ||= "$_.$arch" for @{$packs_arch{$arch} || []};
 }
@@ -104,33 +129,47 @@ for my $arch (@archs) {
 for my $pack (keys %packs) {
   my $r = {};
   my (@s, $s, @pr, @re);
+  # 处理 %prov (provides关系)
   @s = split(' ', $prov{$packs{$pack}});
   while (@s) {
     $s = shift @s;
+    # 为什么去掉以 / 开头（绝对路径）?可以用 "rpm -ql 查出"?
     next if $s =~ /^\//;
     if ($s =~ /^rpmlib\(/) {
+      # 这里处理 provides 时好像用不到 
       splice(@s, 0, 2);
       next;
     }
     push @pr, $s;
+    # 比如遇到 "pam_krb5 = 2.2.14-10" 就去掉 "= 2.2.14-10"，这里已经 split 为数组了
     splice(@s, 0, 2) if @s && $s[0] =~ /^[<=>]/;
   }
+  # 处理 %req (requires 关系)
   @s = split(' ', $req{$packs{$pack}});
   while (@s) {
     $s = shift @s;
     next if $s =~ /^\//;
     if ($s =~ /^rpmlib\(/) {
+      # 这里drop掉 rpmlib
       splice(@s, 0, 2);
       next;
     }
     push @re, $s;
     splice(@s, 0, 2) if @s && $s[0] =~ /^[<=>]/;
   }
-  $r->{'provides'} = \@pr;
+  $r->{'provides'} = \@pr;  # 数组引用
   $r->{'requires'} = \@re;
   $repo{$pack} = $r;
 }
+# 使用 Data:Dumper 可以直观看到数据结构
+#use Data::Dumper;
+#print Dumper(\%repo);
+# 类似如下结构（片段）：
+# {...,  'openssl-perl' => {'provides' => ['openssl-perl'],
+#                           'requires' => ['openssl','perl']},  ...}
+  
 
+# 如果指定 dist 就不执行下面 if 语句
 if (!defined($dist) || $dist eq '') {
   my $rpmarch = (grep {$fn{"rpm.$_"}} @archs)[0];
   if (!$rpmarch) {
@@ -227,8 +266,13 @@ if ($spec) {
       'subpacks' => [],
     };
   } else {
+    # 是 Build.pm 文件中的 parse 程序，调用 Build::Rpm::parse
     $d = Build::parse($cf, $spec);
   }
+  # 下面得到要编译包（这里 spec 文件）的信息
+  # $packname 包名
+  # $packvers 版本
+  # $subpacks 子包（会生成那些包,这些包在处理依赖时候都删掉）
   $packname = $d->{'name'};
   $packvers = $d->{'version'};
   $subpacks = $d->{'subpacks'};

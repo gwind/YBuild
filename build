@@ -212,20 +212,32 @@ usage () {
 #                 2 -> successfull build, but no changes to former built packages
 #
 cleanup_and_exit () {
+    # 这个重要！ trap 直接跟信号名字，表示用该信号默认的动作处理，
+    # 这里是恢复 EXIT 信号的动作，因为前面程序有 "trap fail_exit EXIT" 
     trap EXIT
     test -z "$1" && set 0
+    # 如果在虚拟机中
     if test -n "$RUNNING_IN_VM" ; then
 	cd /
 	if test -n "$VM_SWAP" -a -e "$VM_SWAP" ; then
 	    swapoff "$VM_SWAP" 2>/dev/null
 	    echo -n "BUILDSTATUS$1" >"$VM_SWAP"
 	fi
+        # 0 是标准输出, 2 是标准错误输出
+        # 下面命令把当前“输出”重定向到标准输出,"标准错误输出" 也指向标准输出
+        # 因为程序执行中，是可能改变这些的，现在只是恢复。
 	exec >&0 2>&0	# so that the logging tee finishes
 	sleep 1		# wait till tee terminates
+        # kill 中指定 -1 为 pid 值，表示所有大于 1 的进程都将得到指定的信号
+        # -1     All processes with pid larger than 1 will be signaled.
 	kill -9 -1	# goodbye cruel world
+        # "halt -f -p" 强制关机并断点
+        # -f     Force halt or reboot, don’t call shutdown(8).
+        # -p     When halting the system, do a poweroff. This is the  default  when  halt  is  called as poweroff.
 	exec /bin/bash -c 'mount -n -o remount,ro / ; halt -f -p'
 	halt -f -p
     else
+    # 不在虚拟机中
 	umount -n $BUILD_ROOT/proc 2>/dev/null || true
 	umount -n $BUILD_ROOT/dev/pts 2>/dev/null || true
 	test "$VM_IMAGE" = 1 && VM_IMAGE=
@@ -234,6 +246,13 @@ cleanup_and_exit () {
     exit $1
 }
 
+# 接受到 EXIT 信号时的处理函数， "man exit" 可以看到 bash 内置命令的帮助手册
+# exit [n]
+#              Cause  the shell to exit with a status of n.  If n is omitted, the exit sta-
+#              tus is that of the last command executed.  A trap on EXIT is executed before
+#              the shell terminates.
+# exit 函数会发出 EXIT 信号
+# 注意 cleanup_and_exit 函数中恢复了 EXIT 的默认动作，才不会循环执行！
 fail_exit()
 {
   cleanup_and_exit 1
@@ -260,6 +279,8 @@ toshellscript()
 	echo
 }
 
+# http://ccache.samba.org/
+# 加快 c/c++ 编译速度
 setupccache()
 {
     if [ "$ccache" = 1 ]; then
@@ -286,6 +307,8 @@ setupccache()
     fi
 }
 
+# 参考： http://en.opensuse.org/Icecream
+# icecream 是建立 distcc 基础上的软件，可以分布式编译，此处创建 icecream 环境
 setupicecream()
 {
     if [ "$icecream" -eq 0 ]; then
@@ -344,6 +367,7 @@ setupicecream()
     fi
 }
 
+# 设置虚拟内存限额
 setmemorylimit()
 {
     if [ -n "$VM_IMAGE" -o -n "$RUNNING_IN_VM" ]; then
@@ -353,8 +377,11 @@ setmemorylimit()
     while read mem; do
 	case "$mem" in
 	    MemTotal:*)
+                #  把 $mem 字符串设置为命令行参数
 		set -- $mem
                 eval "mem=\$(($2/3*4))"
+                # 使用 "ulimit -a" 可以看到 "virtual memory (kbytes,
+                # -v) unlimited" ，说明 -v 设置 虚拟内存限额。
 		ulimit -v $mem
 		echo "Memory limit set to ${mem}KB"
 		break;
@@ -513,7 +540,6 @@ find_spec_files()
 	set -- "${SPECFILES[@]}"
     fi
     SPECFILES=()
-    echo "#jianlee: $@"
     for spec in "$@"; do
         # ${spec#/} 去掉开头的 '/'，这里的作用是判断 $spec 路径是否是绝对路径
 	if [ "$spec" = "${spec#/}" ]; then
@@ -553,10 +579,13 @@ become_root_or_fail()
     cleanup_and_exit 1
 }
 
+# 确保 build root 目录创建
 mkdir_build_root()
 {
     if [ -d "$BUILD_ROOT" ]; then
 	# check if it is owned by root
+        # "stat -c %u 目录" 得到目录的属主ID
+        # "stat -c %U 目录" 属主名字
 	if [ -z "$RUNNING_IN_VM" -a \! -O "$BUILD_ROOT" -a "`stat -c %u $BUILD_ROOT`" -ne 0 ]; then
 	    echo "BUILD_ROOT=$BUILD_ROOT must be owned by $USER. Exit..."
 	    cleanup_and_exit 1
@@ -603,20 +632,19 @@ shopt -s nullglob
 # detect_vm_2nd_stage 是前面定义的一个函数
 # 测试是否需要进一步设置环境
 # set 命令直接接的字符串会设置为命令行各个参数( $1 $2 $3 ...)
+# detect_vm_2nd_stage 函数返回 0 ，if 测试为 ture
 if detect_vm_2nd_stage ; then
     set "/.build-srcdir/$SPECFILE"
     # 现在 echo $1 值为 "/.build-srcdir/$SPECFILE"
 fi
 
 # 目前 common_functions 定义了函数 set_build_arch ，这个函数设置了
-# $BUILD_ARCH
+# 标准的 $BUILD_ARCH
 . $BUILD_DIR/common_functions || exit 1
 
 export HOST
 
-# 下面的 $1 很可能是上面的 "/.build-srcdir/$SPECFILE"(假如
-# detect_vm_2nd_stage 返回值非0)
-# $1 不为空，执行 while
+# $1 不为空，执行 while 处理命令行参数
 while test -n "$1"; do
   # 除非$1形如 "--XXX=xxx",否则 ARG 会不变
   PARAM="$1"
@@ -635,6 +663,9 @@ while test -n "$1"; do
       PARAM=${PARAM%%=*}
       # -- 在命令后面，表示不让shell解释后面的字符串为选项
       # 如 "set -- --test1 test2 test3" ，如果不加 -- , shell 会报错
+      # 这里增加一个 ---noarg 选项是为了后面好 shift ，因为
+      # --rpms=XXX.rpm 类型的参数要加上一个“垃圾”选项，好满足本循环一次
+      # 处理一个 “选项-参数” 对的处理方式
       set -- "----noarg=$PARAM" "$@"
   esac
   # 此时 ARG 保存着 PARAM 选项的参数
@@ -665,7 +696,7 @@ while test -n "$1"; do
         shift
       ;;
       *-arch)
-        # 不用检查$ARG是否为空，因为有默认 BUILD_ARCH 测试
+        # 不用检查$ARG是否为空，因为有默认 BUILD_ARCH
         BUILD_ARCH="$ARG"
         shift
       ;;
@@ -797,7 +828,6 @@ while test -n "$1"; do
       ;;
       # 此处的技巧是先把 "[-]-XXX=xxx" 拆开，经过一轮分析到这里，如果
       # ----noarg 还在（如果处理就会shift掉），说明没有处理，则认为出错。
-      # 此处是不是应该放到倒数第三位？
       ----noarg)
         echo "$ARG does not take an argument"
         cleanup_and_exit
@@ -967,7 +997,7 @@ if test -z "$RUNNING_IN_VM" ; then
 	    echo "Creating filesystem on $VM_IMAGE"
 	    $vm_img_mkfs $VM_IMAGE || cleanup_and_exit 3
 	    if test -n "$vm_img_tunefs" ; then
-	        $vm_img_tunefs $VM_IMAGE || cleanup_and_exit 3
+ $vm_img_tunefs $VM_IMAGE || cleanup_and_exit 3
 	    fi
 	fi
 	mkdir_build_root
@@ -989,7 +1019,10 @@ mkdir_build_root
 
 rm -f $BUILD_ROOT/exit
 
+# 我想测试 /root 是否可写就是查看用户是否有root权限
 if [ -w /root ]; then
+    # 创建 proc 和 dev/pts 目录，并挂载host系统资源
+    # 请看 http://jianlee.ylinux.org/Computer/Linux发行版开发/chroot-predo.html
     mkdir -p $BUILD_ROOT/proc
     mkdir -p $BUILD_ROOT/dev/pts
     mount -n -tproc none $BUILD_ROOT/proc || true
@@ -1000,6 +1033,8 @@ if test -z "$VM_IMAGE" -a -z "$LOGFILE"; then
     LOGFILE="$BUILD_ROOT/.build.log"
 fi
 
+# 如果设置了 $LOGFILE 变量，下面的动作让标准输出和标准错误输出通过 tee
+# 管道通向 $LOGFILE 文件和 stdout 各一份。
 if test -n "$LOGFILE" ; then
     echo  logging output to $LOGFILE...
     rm -f $LOGFILE
@@ -1011,6 +1046,7 @@ if test -n "$LOGFILE" ; then
     fi
 fi
 
+# 设置虚拟内存限额
 setmemorylimit
 
 #
@@ -1029,6 +1065,7 @@ fi
 test "$BUILD_ARCH" = all && BUILD_ARCH=
 BUILD_USER_ABUILD_USED=
 
+# 一个很长 (800 多行）的 for 循环，分别编译命令行提供的多个编译包
 for SPECFILE in "${SPECFILES[@]}" ; do
 
     SRCDIR="${SPECFILE%/*}"
@@ -1058,21 +1095,26 @@ for SPECFILE in "${SPECFILES[@]}" ; do
     #
     # first setup building directory...
     #
+    # -s 测试文件存在并且大小大于0
     test -s "$SPECFILE" || {
        echo "$SPECFILE" is empty.  This should not happen...
        cleanup_and_exit 1
     }
 
+    # 测试 $SPECFILE 是否为 *.src.rpm 包
     if test "$SPECFILE" != "${SPECFILE%.src.rpm}" ; then
 	echo processing src rpm $SRCDIR/$SPECFILE ...
 	MYSRCDIR=$BUILD_ROOT/.build-srcdir
 	rm -rf $MYSRCDIR
 	mkdir -p $MYSRCDIR
 	cd $MYSRCDIR || cleanup_and_exit 1
+        # unrpm 是 YBuild 自带的一个脚本，利用 rpm2cpio 解压 rpm 包
 	$BUILD_DIR/unrpm -q $SRCDIR/$SPECFILE || {	    
 	    echo "could not install $SPECFILE."
 	    cleanup_and_exit 1
 	}
+        # 下面 for 循环的目的只是让 SPECFILE 等于 *.spec 文件，此目录下
+        # 只有一个 *.spec 文件。
 	for SPECFILE in *.spec ; do : ; done
     else
 	MYSRCDIR="$SRCDIR"
@@ -1116,11 +1158,14 @@ for SPECFILE in "${SPECFILES[@]}" ; do
 	  *) CFFORMAT=rpm ;;
 	esac
 	echo "running changelog2spec --target $CFFORMAT --file $MYSRCDIR/$SPECFILE"
+        # changelog2spec 是一个 perl 脚本
+        # Convert a SUSE or Debian changelog file to rpm format
 	if ! $BUILD_DIR/changelog2spec --target $CFFORMAT --file "$MYSRCDIR/$SPECFILE" > $BUILD_ROOT/.build-changelog ; then
 	    rm -f $BUILD_ROOT/.build-changelog
 	fi
     fi
 
+    # 在 VM 中时
     if test -n "$VM_TYPE"; then
 	rm -rf $BUILD_ROOT/.build
 	mkdir -p $BUILD_ROOT/.build
@@ -1303,6 +1348,7 @@ for SPECFILE in "${SPECFILES[@]}" ; do
 	cleanup_and_exit 0
     fi
 
+    # 如果设置了 DO_INIT 变量，就做以下初始化工作
     if test "$DO_INIT" = true ; then
 	#
 	# create legacy .buildenv file
@@ -1358,6 +1404,7 @@ for SPECFILE in "${SPECFILES[@]}" ; do
     test -n "$NOROOTFORBUILD" && BUILD_USER=abuild
     test "$BUILDTYPE" = kiwi && BUILD_USER=root
 
+    # 如果使用 abuild 用户，而系统目前还没有此用户，就创建一个
     if test $BUILD_USER = abuild ; then
         if ! egrep '^abuild:' >/dev/null <$BUILD_ROOT/etc/passwd ; then
             echo 'abuild::399:399:Autobuild:/home/abuild:/bin/bash' >>$BUILD_ROOT/etc/passwd
@@ -1405,9 +1452,9 @@ for SPECFILE in "${SPECFILES[@]}" ; do
     mount -n -tproc none $BUILD_ROOT/proc 2> /dev/null
     mount -n -tdevpts none $BUILD_ROOT/dev/pts 2> /dev/null
  
-    setupicecream
+    setupicecream # 设置分布式编译 icecream
 
-    setupccache
+    setupccache # 设置 ccache，另外一个加速 c/c++ 编译速度的软件
 
     # nasty hack to prevent rpath on known paths
     # FIXME: do this only for suse
@@ -1425,6 +1472,7 @@ for SPECFILE in "${SPECFILES[@]}" ; do
     done
     test -e $BUILD_ROOT/exit && cleanup_and_exit
 
+    # 清理完，在创建 SOURCES 目录，拷贝 SOURCES
     mkdir -p $BUILD_ROOT$TOPDIR/SOURCES
     if test "$BUILDTYPE" = kiwi ; then
 	mkdir -p $BUILD_ROOT$TOPDIR/KIWI
@@ -1440,14 +1488,17 @@ for SPECFILE in "${SPECFILES[@]}" ; do
     CHANGELOGARGS=
     test -n "$CHANGELOG" -a -f "$BUILD_ROOT/.build-changelog" && CHANGELOGARGS="--changelog $BUILD_ROOT/.build-changelog"
 
+    # 编译 spec 类型
     if test "$BUILDTYPE" = spec ; then
 	# do buildrequires/release substitution
 	args=()
 	if test -n "$RELEASE"; then
 		args=(--release "$RELEASE")
 	fi
+        # substitutedeps 是一个 perl 脚本
 	substitutedeps "${args[@]}" --dist "$BUILD_DIST" --archpath "$BUILD_ARCH" --configdir "$BUILD_DIR/configs" $CHANGELOGARGS "$BUILD_ROOT$TOPDIR/SOURCES/$SPECFILE" "$BUILD_ROOT/.spec.new" || cleanup_and_exit 1
 	# extract macros from configuration
+        # getmacros 是一个 perl 脚本
 	getmacros --dist "$BUILD_DIST" --archpath "$BUILD_ARCH" --configdir "$BUILD_DIR/configs" > $BUILD_ROOT/root/.rpmmacros
 	if test -n "$BUILD_DEBUG" ; then
 	    echo '
@@ -1462,6 +1513,7 @@ for SPECFILE in "${SPECFILES[@]}" ; do
 	fi
 	test $BUILD_USER = abuild && cp -p $BUILD_ROOT/root/.rpmmacros $BUILD_ROOT/home/abuild/.rpmmacros
 	# extract optflags from configuration
+        # getoptflags 是一个 perl 脚本
 	getoptflags --dist "$BUILD_DIST" --configdir "$BUILD_DIR/configs" --archpath "$BUILD_ARCH" ${BUILD_DEBUG:+--debug} > $BUILD_ROOT/root/.rpmrc
 	test $BUILD_USER = abuild && cp -p $BUILD_ROOT/root/.rpmrc $BUILD_ROOT/home/abuild/.rpmrc
 	# case arm, extract changetarget
@@ -1487,6 +1539,7 @@ for SPECFILE in "${SPECFILES[@]}" ; do
 	fi
     fi
 
+    # debian 编译类型
     if test "$BUILDTYPE" = dsc ; then
 	rm -rf $BUILD_ROOT$TOPDIR/BUILD
 	mkdir -p $BUILD_ROOT$TOPDIR/SOURCES.DEB
@@ -1561,7 +1614,9 @@ for SPECFILE in "${SPECFILES[@]}" ; do
         fi
     fi
 
+    # 编译 srpm
     if test "$BUILDTYPE" = spec ; then
+        # 指定 rpmbuild 的编译类型，默认用 -ba
 	test -z "$BUILD_RPM_BUILD_STAGE" && BUILD_RPM_BUILD_STAGE=-ba
 
 	# XXX: move _srcdefattr to macro file?
@@ -1599,15 +1654,18 @@ for SPECFILE in "${SPECFILES[@]}" ; do
 	test -x $BUILD_ROOT/usr/bin/rpmbuild || rpmbuild=rpm
 	# su involves a shell which would require even more
 	# complicated quoting to bypass than this
+        # toshellscript 是上面定义的一个函数，提供标准 shell 命令行写法，su 的情况下需要
 	toshellscript $rpmbuild \
 		"${definesnstuff[@]}" \
 		"${rpmbopts[@]}" \
 		"$TOPDIR/SOURCES/$SPECFILE" \
 		> $BUILD_ROOT/.build.command
 	chmod 755 $BUILD_ROOT/.build.command
+        # 这里 su 命令中 -c 指定的文件就是上面 toshellscript 生成的 shell 脚本
 	chroot $BUILD_ROOT su -c /.build.command - $BUILD_USER < /dev/null && BUILD_SUCCEEDED=true
     fi
 
+    # 处理 debian
     if test "$BUILDTYPE" = dsc ; then
 	# Checks to see if a build script should be used
 	# this allows the build environment to be manipulated
@@ -1631,6 +1689,7 @@ for SPECFILE in "${SPECFILES[@]}" ; do
 	done < <(sed -ne '/^Files:/,$s/^ ................................ [0-9][0-9]* //p' < $BUILD_ROOT/$DEB_SOURCEDIR/$DEB_DSCFILE)
     fi
 
+    # kiwi
     if test "$BUILDTYPE" = kiwi ; then
 	# run createrepo on the repositories
 	if test -d $BUILD_ROOT/$TOPDIR/SOURCES/repos ; then
@@ -1824,6 +1883,7 @@ for SPECFILE in "${SPECFILES[@]}" ; do
     test -d "$SRCDIR" && cd "$SRCDIR"
 done
 
+# 保存 debs 和 rpms 列表
 RPMS=`find $BUILD_ROOT/$TOPDIR/RPMS -type f -name "*.rpm" 2>/dev/null`
 DEBS=`find $BUILD_ROOT/$TOPDIR/DEBS -type f -name "*.deb" 2>/dev/null`
 

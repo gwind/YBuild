@@ -22,6 +22,7 @@ browner=0
 definesnstuff=()
 repos=()
 
+# $BUILD_DIR 通常在 /usr/lib/build
 . $BUILD_DIR/common_functions || exit 1
 
 # should RPMs be installed with --force ?
@@ -140,6 +141,7 @@ function preinstall {
 		rpm -qp --nodigest --nosignature --qf "%{PREIN}" "$BUILD_ROOT/.init_b_cache/rpms/$1.rpm" > .init_b_cache/scripts/$1.pre
 		rpm -qp --nodigest --nosignature --qf "%{POSTIN}" "$BUILD_ROOT/.init_b_cache/rpms/$1.rpm" > .init_b_cache/scripts/$1.post
 		echo -n '(none)' > .init_b_cache/scripts/.none
+                # cmp 比较两个文件异同，-s 表示安静模式 
 		cmp -s .init_b_cache/scripts/$1.pre .init_b_cache/scripts/.none && rm -f .init_b_cache/scripts/$1.pre
 		cmp -s .init_b_cache/scripts/$1.post .init_b_cache/scripts/.none && rm -f .init_b_cache/scripts/$1.post
 		rm -f .init_b_cache/scripts/.none
@@ -239,6 +241,8 @@ function create_devs {
 DEVLIST
 }
 
+# 创建依赖关系文件
+# CACHE_FILE=$BUILD_ROOT/.srcfiles.cache
 function validate_cache_file {
     local findonly=''
     test "${repos[*]} ${BUILD_RPMS//:/ /}" != "$(cat $CACHE_FILE.id 2>/dev/null)" && rm -f $CACHE_FILE.id
@@ -266,8 +270,9 @@ function validate_cache_file {
 		set -- $BUILD_DIR/createrpmdeps "$SRC"
 	    fi
 	    echo "$@" >&2
+            # 下面这个 $@ 会执行！
 	    "$@" || cleanup_and_exit 1
-	done > $CACHE_FILE.new
+	done > $CACHE_FILE.new  # CACHE_FILE=$BUILD_ROOT/.srcfiles.cache
 
 	mv $CACHE_FILE.new $CACHE_FILE
 	echo "${repos[*]} ${BUILD_RPMS//:/ /}" > $CACHE_FILE.id
@@ -305,6 +310,7 @@ fail_exit()
   cleanup_and_exit 1
 }
 
+# 在 common_functions 文件中有定义
 set_build_arch
 
 trap fail_exit EXIT
@@ -378,6 +384,7 @@ else
 	# create rpmdeps file
 	#
 	CACHE_FILE=$BUILD_ROOT/.srcfiles.cache
+        # validate_cache_file 在前面定义，调用 createrpmdeps 创建 rpms 关系文件
 	validate_cache_file
 
 	#
@@ -385,6 +392,7 @@ else
 	#
 	RPMLIST=$BUILD_ROOT/.init_b_cache/rpmlist
 	test -z "$LIST_STATE" && echo "expanding package dependencies..."
+        # expanddeps 是 perl 脚本
 	if ! $BUILD_DIR/expanddeps $USEUSEDFORBUILD "${definesnstuff[@]}" --dist "$BUILD_DIST" --depfile "$CACHE_FILE" --archpath "$BUILD_ARCH" --configdir $BUILD_DIR/configs "${PKGS[@]}" > $RPMLIST ; then
 	    rm -f $BUILD_IS_RUNNING
 	    cleanup_and_exit 1
